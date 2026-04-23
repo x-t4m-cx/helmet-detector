@@ -31,3 +31,8 @@ FONT_PATH = "arial.ttf"
 MAX_CAMERAS_TO_CHECK = 5
 CAMERA_FRAME_DELAY = 0.03
 USE_DSHOW_ON_WINDOWS = True
+
+#видео
+VIDEO_PROCESS_EVERY_N_FRAMES = 2  # Обрабатывать каждый N-ый кадр
+VIDEO_BUFFER_SIZE = 30            # Размер буфера кадров
+VIDEO_UPDATE_INTERVAL_MS = 33     # Интервал обновления UI (~30 FPS)
