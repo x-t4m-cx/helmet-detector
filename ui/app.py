@@ -1,4 +1,3 @@
-# ui/app.py
 import os
 import time
 import threading
@@ -14,15 +13,12 @@ from ui.styles import UIStyles
 
 try:
     import cv2
-
     _CV2_AVAILABLE = True
 except ImportError:
     _CV2_AVAILABLE = False
 
-# Импорт видео процессора
 try:
     from utils.video_processor import VideoProcessor
-
     _VIDEO_PROCESSOR_AVAILABLE = True
 except ImportError:
     _VIDEO_PROCESSOR_AVAILABLE = False
@@ -31,9 +27,9 @@ except ImportError:
 class HelmetDetectionApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Детектор защитной каски")
+        self.root.title("Safety Vision • Контроль касок")
         self.root.geometry("1200x750")
-        self.root.configure(bg=UIStyles.BG)
+        self.root.configure(bg=UIStyles.BG_PRIMARY)
 
         # Инициализация детекторов
         self.face_detector = FaceDetector()
@@ -66,96 +62,84 @@ class HelmetDetectionApp:
         self.setup_ui()
 
     def setup_ui(self):
-        main_container = tk.Frame(self.root, bg=UIStyles.BG)
-        main_container.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        main_container = tk.Frame(self.root, bg=UIStyles.BG_PRIMARY)
+        main_container.pack(fill=tk.BOTH, expand=True, padx=12, pady=12)
 
-        # Заголовок
-        header_frame = tk.Frame(main_container, bg=UIStyles.BG)
+        # Заголовок (лаконичный)
+        header_frame = tk.Frame(main_container, bg=UIStyles.BG_PRIMARY)
         header_frame.pack(fill=tk.X, pady=(0, 15))
 
-        title_label = tk.Label(header_frame, text="Детектор защитной каски",
-                               font=('Segoe UI', 18, 'bold'), fg=UIStyles.DARK, bg=UIStyles.BG)
+        title_label = tk.Label(header_frame, text="Safety Vision",
+                               font=('Segoe UI', 16, 'normal'), fg=UIStyles.TEXT_PRIMARY, bg=UIStyles.BG_PRIMARY)
         title_label.pack(side=tk.LEFT)
 
-        subtitle_label = tk.Label(header_frame, text="Анализ соблюдения правил безопасности",
-                                  font=('Segoe UI', 10), fg=UIStyles.GRAY, bg=UIStyles.BG)
-        subtitle_label.pack(side=tk.LEFT, padx=(15, 0))
+        subtitle_label = tk.Label(header_frame, text="Контроль защитных касок",
+                                  font=('Segoe UI', 10), fg=UIStyles.TEXT_SECONDARY, bg=UIStyles.BG_PRIMARY)
+        subtitle_label.pack(side=tk.LEFT, padx=(12, 0))
 
         # Панель кнопок
         self._create_button_panel(main_container)
 
         # Основной контент
-        content_frame = tk.Frame(main_container, bg=UIStyles.BG)
+        content_frame = tk.Frame(main_container, bg=UIStyles.BG_PRIMARY)
         content_frame.pack(fill=tk.BOTH, expand=True)
 
-        # Левая панель - изображение
         self._create_image_panel(content_frame)
-
-        # Правая панель - результаты
         self._create_results_panel(content_frame)
-
-        # Статусная строка
         self._create_status_bar(main_container)
 
         self.root.after(200, self._redraw_canvas_if_needed)
 
     def _create_button_panel(self, parent):
-        control_frame = tk.Frame(parent, bg=UIStyles.BG)
-        control_frame.pack(fill=tk.X, pady=(0, 15))
+        control_frame = tk.Frame(parent, bg=UIStyles.BG_PRIMARY)
+        control_frame.pack(fill=tk.X, pady=(0, 12))
 
-        button_card = tk.Frame(control_frame, bg=UIStyles.WHITE, relief='flat', bd=1)
-        button_card.pack(fill=tk.X)
+        button_container = tk.Frame(control_frame, bg=UIStyles.BG_SECONDARY, bd=1, relief='flat')
+        button_container.pack(fill=tk.X, padx=0, pady=0)
 
-        button_container = tk.Frame(button_card, bg=UIStyles.WHITE)
-        button_container.pack(pady=12, padx=12)
+        btn_frame = tk.Frame(button_container, bg=UIStyles.BG_SECONDARY)
+        btn_frame.pack(pady=8, padx=12)
 
-        self.btn_load = tk.Button(button_container, text="Загрузить изображение", command=self.load_image)
-        self.btn_video = tk.Button(button_container, text="Загрузить видео", command=self.load_video)
-        self.btn_camera = tk.Button(button_container, text="Включить камеру", command=self.toggle_camera)
-        self.btn_analyze = tk.Button(button_container, text="Анализировать", command=self.analyze_current)
-        self.btn_clear = tk.Button(button_container, text="Очистить", command=self.clear_all)
+        # Все кнопки в едином стиле
+        self.btn_load = tk.Button(btn_frame, text="Загрузить", command=self.load_image)
+        self.btn_video = tk.Button(btn_frame, text="Загрузить видео", command=self.load_video)
+        self.btn_camera = tk.Button(btn_frame, text="Камера", command=self.toggle_camera)
+        self.btn_analyze = tk.Button(btn_frame, text="Анализ", command=self.analyze_current)
+        self.btn_clear = tk.Button(btn_frame, text="Очистить", command=self.clear_all)
 
-        UIStyles.apply_button_style(self.btn_load, UIStyles.PRIMARY, '#2980b9')
-        UIStyles.apply_button_style(self.btn_video, '#e67e22', '#d35400')  # Оранжевый для видео
-        UIStyles.apply_button_style(self.btn_camera, UIStyles.SUCCESS, '#27ae60')
-        UIStyles.apply_button_style(self.btn_analyze, UIStyles.PURPLE, '#8e44ad')
-        UIStyles.apply_button_style(self.btn_clear, UIStyles.DANGER, '#c0392b')
+        # Применяем единый стиль (без разноцветных кнопок)
+        for btn in [self.btn_load, self.btn_video, self.btn_camera, self.btn_analyze, self.btn_clear]:
+            UIStyles.apply_button_style(btn, is_primary=(btn == self.btn_analyze))
 
         for btn in [self.btn_load, self.btn_video, self.btn_camera, self.btn_analyze, self.btn_clear]:
-            btn.pack(side=tk.LEFT, padx=5)
+            btn.pack(side=tk.LEFT, padx=4)
 
     def _create_image_panel(self, parent):
-        left_frame = tk.Frame(parent, bg=UIStyles.BG)
+        left_frame = tk.Frame(parent, bg=UIStyles.BG_PRIMARY)
         left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
 
-        image_card = tk.LabelFrame(left_frame, text="Изображение",
-                                   font=('Segoe UI', 11, 'bold'), fg=UIStyles.DARK,
-                                   bg=UIStyles.WHITE, bd=1, relief='solid')
-        image_card.pack(fill=tk.BOTH, expand=True)
+        # Лаконичная рамка
+        canvas_container = tk.Frame(left_frame, bg=UIStyles.BORDER, bd=0)
+        canvas_container.pack(fill=tk.BOTH, expand=True)
 
-        self.canvas_frame = tk.Frame(image_card, bg=UIStyles.WHITE)
-        self.canvas_frame.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
+        self.canvas = tk.Canvas(canvas_container, bg=UIStyles.BG_TERTIARY, highlightthickness=0)
+        self.canvas.pack(fill=tk.BOTH, expand=True, padx=1, pady=1)
 
-        self.canvas = tk.Canvas(self.canvas_frame, bg=UIStyles.CANVAS_BG, highlightthickness=0)
-        self.canvas.pack(fill=tk.BOTH, expand=True)
+        self.canvas.create_text(400, 250, text="Загрузите изображение или включите камеру",
+                                font=('Segoe UI', 12), fill=UIStyles.TEXT_DISABLED, justify=tk.CENTER, tags=("hint",))
 
-        self.canvas.create_text(400, 250, text="Загрузите изображение\nили включите камеру",
-                                font=('Segoe UI', 14), fill=UIStyles.GRAY, justify=tk.CENTER, tags=("hint",))
+        # Привязываем canvas_frame для видео-контролов
+        self.canvas_frame = canvas_container
 
     def _create_results_panel(self, parent):
-        right_frame = tk.Frame(parent, bg=UIStyles.BG, width=350)
+        right_frame = tk.Frame(parent, bg=UIStyles.BG_PRIMARY, width=320)
         right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=False)
         right_frame.pack_propagate(False)
-        right_frame.config(width=350)
+        right_frame.config(width=320)
 
-        results_card = tk.LabelFrame(right_frame, text="Результаты анализа",
-                                     font=('Segoe UI', 11, 'bold'), fg=UIStyles.DARK,
-                                     bg=UIStyles.WHITE, bd=1, relief='solid')
-        results_card.pack(fill=tk.BOTH, expand=True)
-
-        # Статистика
-        stats_frame = tk.Frame(results_card, bg=UIStyles.WHITE)
-        stats_frame.pack(fill=tk.X, padx=10, pady=10)
+        # Статистика - компактные карточки
+        stats_container = tk.Frame(right_frame, bg=UIStyles.BG_PRIMARY)
+        stats_container.pack(fill=tk.X, pady=(0, 12))
 
         self.stats_vars = {
             'total': tk.StringVar(value="0"),
@@ -164,65 +148,250 @@ class HelmetDetectionApp:
             'compliance': tk.StringVar(value="0%")
         }
 
-        stats_grid = tk.Frame(stats_frame, bg=UIStyles.WHITE)
-        stats_grid.pack()
+        stats_grid = tk.Frame(stats_container, bg=UIStyles.BG_PRIMARY)
+        stats_grid.pack(fill=tk.X)
 
-        stats_data = [
-            ('Всего сотрудников', 'total'),
+        # Карточки статистики (однотипные)
+        stats_items = [
+            ('Всего', 'total'),
             ('В касках', 'with_helmet'),
             ('Без касок', 'without'),
             ('Соблюдение', 'compliance')
         ]
 
-        for i, (label, key) in enumerate(stats_data):
-            color = UIStyles.get_stats_card_color(i)
-            card = tk.Frame(stats_grid, bg=color, relief='flat', bd=0)
-            card.grid(row=i // 2, column=i % 2, padx=5, pady=5, sticky='nsew')
+        for i, (label, key) in enumerate(stats_items):
+            card = tk.Frame(stats_grid, bg=UIStyles.BG_SECONDARY, bd=1, relief='flat')
+            card.grid(row=i // 2, column=i % 2, padx=4, pady=4, sticky='nsew')
+            card.configure(highlightbackground=UIStyles.BORDER, highlightthickness=1)
 
             value_label = tk.Label(card, textvariable=self.stats_vars[key],
-                                   font=('Segoe UI', 18, 'bold'), fg=UIStyles.WHITE, bg=color)
-            value_label.pack(pady=(10, 5))
+                                   font=('Segoe UI', 22, 'normal'), fg=UIStyles.TEXT_PRIMARY, bg=UIStyles.BG_SECONDARY)
+            value_label.pack(pady=(10, 2))
 
-            desc_label = tk.Label(card, text=label, font=('Segoe UI', 10),
-                                  fg=UIStyles.WHITE, bg=color)
+            desc_label = tk.Label(card, text=label, font=('Segoe UI', 9),
+                                  fg=UIStyles.TEXT_SECONDARY, bg=UIStyles.BG_SECONDARY)
             desc_label.pack(pady=(0, 10))
 
             stats_grid.grid_columnconfigure(i % 2, weight=1)
+            stats_grid.grid_rowconfigure(i // 2, weight=1)
 
-        # Детальный отчет
-        separator = tk.Frame(results_card, bg=UIStyles.LIGHT_GRAY, height=2)
-        separator.pack(fill=tk.X, padx=10, pady=10)
+        # Разделитель (простая линия)
+        separator = tk.Frame(right_frame, bg=UIStyles.BORDER, height=1)
+        separator.pack(fill=tk.X, pady=8)
 
-        details_label = tk.Label(results_card, text="Детальный отчет",
-                                 font=('Segoe UI', 11, 'bold'), bg=UIStyles.WHITE, fg=UIStyles.DARK)
-        details_label.pack(anchor=tk.W, padx=10, pady=(0, 5))
+        # Детальный отчет - минималистичный
+        details_label = tk.Label(right_frame, text="Отчет",
+                                 font=('Segoe UI', 10, 'normal'), bg=UIStyles.BG_PRIMARY, fg=UIStyles.TEXT_SECONDARY)
+        details_label.pack(anchor=tk.W, pady=(0, 6))
 
-        text_frame = tk.Frame(results_card, bg=UIStyles.WHITE)
-        text_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 10))
+        text_container = tk.Frame(right_frame, bg=UIStyles.BORDER, bd=0)
+        text_container.pack(fill=tk.BOTH, expand=True)
 
-        self.results_text = tk.Text(text_frame, wrap=tk.WORD, font=('Consolas', 10),
-                                    bg=UIStyles.CANVAS_BG, fg=UIStyles.DARK, relief='flat', bd=0)
-        self.results_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.results_text = tk.Text(text_container, wrap=tk.WORD, font=('Consolas', 9),
+                                    bg=UIStyles.BG_TERTIARY, fg=UIStyles.TEXT_PRIMARY,
+                                    relief='flat', bd=0, padx=8, pady=6,
+                                    selectbackground=UIStyles.ACCENT_BLUE)
+        self.results_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=1, pady=1)
 
-        scrollbar = ttk.Scrollbar(text_frame, command=self.results_text.yview)
+        scrollbar = ttk.Scrollbar(text_container, command=self.results_text.yview)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.results_text.config(yscrollcommand=scrollbar.set)
 
+        # Настройка стиля скроллбара под темную тему
+        style = ttk.Style()
+        style.configure("Vertical.TScrollbar", background=UIStyles.BG_SECONDARY, troughcolor=UIStyles.BG_PRIMARY,
+                        arrowcolor=UIStyles.TEXT_PRIMARY)
+        scrollbar.configure(style="Vertical.TScrollbar")
+
     def _create_status_bar(self, parent):
-        status_frame = tk.Frame(parent, bg=UIStyles.BG)
-        status_frame.pack(fill=tk.X, pady=(15, 0))
+        status_frame = tk.Frame(parent, bg=UIStyles.BG_PRIMARY)
+        status_frame.pack(fill=tk.X, pady=(12, 0))
 
-        status_card = tk.Frame(status_frame, bg=UIStyles.WHITE, relief='flat', bd=1)
-        status_card.pack(fill=tk.X)
+        status_bar = tk.Frame(status_frame, bg=UIStyles.BG_SECONDARY, bd=1, relief='flat')
+        status_bar.pack(fill=tk.X)
 
-        self.status_var = tk.StringVar(value="Готов к работе")
-        status_label = tk.Label(status_card, textvariable=self.status_var,
-                                font=('Segoe UI', 9), fg=UIStyles.GRAY, bg=UIStyles.WHITE, padx=10, pady=8)
+        self.status_var = tk.StringVar(value="Готов")
+        status_label = tk.Label(status_bar, textvariable=self.status_var,
+                                font=('Segoe UI', 9), fg=UIStyles.TEXT_SECONDARY, bg=UIStyles.BG_SECONDARY,
+                                padx=12, pady=6)
         status_label.pack(side=tk.LEFT)
+
+    def _display_results(self, results):
+        self.results_text.delete(1.0, tk.END)
+
+        if not results:
+            self.results_text.insert(tk.END, "Лица не обнаружены")
+            for key in self.stats_vars:
+                self.stats_vars[key].set("0")
+            return
+
+        total = len(results)
+        with_helmet = sum(1 for r in results if r["has_helmet"])
+        without = total - with_helmet
+        compliance = (with_helmet / total) * 100 if total else 0.0
+
+        self.stats_vars['total'].set(str(total))
+        self.stats_vars['with_helmet'].set(str(with_helmet))
+        self.stats_vars['without'].set(str(without))
+        self.stats_vars['compliance'].set(f"{compliance:.1f}%")
+
+        # Лаконичный отчет без лишних символов
+        self.results_text.insert(tk.END, f"Обнаружено: {total} лиц\n\n")
+
+        for i, r in enumerate(results, 1):
+            status = "В каске" if r['has_helmet'] else "Без каски"
+            confidence = f"{int(r['score'] * 100)}%"
+            self.results_text.insert(tk.END, f"{i}. {status}  [{confidence}]\n")
+
+        self.results_text.insert(tk.END, f"\nСоблюдение: {compliance:.1f}%")
+        self.results_text.see(tk.END)
+
+    def _update_video_results(self, results, frame_num):
+        """Обновляет отображение результатов для видео (лаконично)"""
+        if not results:
+            return
+
+        self.results_text.delete(1.0, tk.END)
+
+        with_helmet = sum(1 for r in results if r['has_helmet'])
+
+        self.results_text.insert(tk.END, f"Кадр {frame_num}\n")
+        self.results_text.insert(tk.END, f"В касках: {with_helmet} / {len(results)}\n\n")
+
+        for i, r in enumerate(results, 1):
+            status = "✓" if r['has_helmet'] else "✗"
+            self.results_text.insert(tk.END, f"{i}. {status}  [{int(r['score'] * 100)}%]\n")
+
+        self.results_text.see(tk.END)
+
+    def _create_video_controls(self):
+        """Создает панель управления видео (лаконичная)"""
+        if hasattr(self, 'video_controls_frame') and self.video_controls_frame:
+            try:
+                self.video_controls_frame.destroy()
+            except:
+                pass
+
+        self.video_controls_frame = tk.Frame(self.canvas_frame, bg=UIStyles.BG_SECONDARY)
+        self.video_controls_frame.pack(side=tk.BOTTOM, fill=tk.X)
+
+        btn_frame = tk.Frame(self.video_controls_frame, bg=UIStyles.BG_SECONDARY)
+        btn_frame.pack(pady=6)
+
+        self.btn_video_play = tk.Button(btn_frame, text="⏸", command=self.toggle_video_pause,
+                                        font=('Segoe UI', 10), width=3, relief='flat', cursor='hand2')
+        self.btn_video_stop = tk.Button(btn_frame, text="⏹", command=self.stop_video,
+                                        font=('Segoe UI', 10), width=3, relief='flat', cursor='hand2')
+
+        for btn in [self.btn_video_play, self.btn_video_stop]:
+            btn.configure(bg=UIStyles.BG_TERTIARY, fg=UIStyles.TEXT_PRIMARY,
+                          activebackground=UIStyles.HOVER, activeforeground=UIStyles.TEXT_PRIMARY,
+                          bd=0)
+            btn.pack(side=tk.LEFT, padx=2)
+
+        progress_frame = tk.Frame(self.video_controls_frame, bg=UIStyles.BG_SECONDARY)
+        progress_frame.pack(fill=tk.X, padx=10, pady=(0, 8))
+
+        self.video_progress = ttk.Scale(progress_frame, from_=0, to=100, orient=tk.HORIZONTAL,
+                                        command=self.seek_video)
+        self.video_progress.pack(fill=tk.X)
+
+        self.video_time_label = tk.Label(progress_frame, text="00:00 / 00:00",
+                                         font=('Segoe UI', 8), bg=UIStyles.BG_SECONDARY, fg=UIStyles.TEXT_DISABLED)
+        self.video_time_label.pack(pady=(4, 0))
+
+    def display_image(self, pil_img):
+        if pil_img is None:
+            return
+        cw = max(self.canvas.winfo_width(), 320)
+        ch = max(self.canvas.winfo_height(), 240)
+        iw, ih = pil_img.size
+        scale = min(cw / iw, ch / ih) * 0.95
+        nw, nh = max(1, int(iw * scale)), max(1, int(ih * scale))
+        img_resized = pil_img.resize((nw, nh), Image.Resampling.LANCZOS)
+        self.photoimage = ImageTk.PhotoImage(img_resized)
+        self.canvas.delete("all")
+        self.canvas.create_image(cw // 2, ch // 2, image=self.photoimage, anchor=tk.CENTER)
+
+    def _detect_helmets(self, pil_image):
+        img_rgb = np.array(pil_image.convert("RGB"))
+        h_img, w_img = img_rgb.shape[:2]
+
+        img_rgb = self.image_processor.enhance_contrast(img_rgb)
+        faces = self.face_detector.detect_faces(img_rgb)
+
+        if not faces:
+            return pil_image, []
+
+        annotated = pil_image.copy()
+        draw = ImageDraw.Draw(annotated)
+
+        try:
+            font = ImageFont.truetype(config.FONT_PATH, size=12)
+        except Exception:
+            font = ImageFont.load_default()
+
+        results = []
+        new_presence = {}
+
+        for idx, (x, y, w, h) in enumerate(faces):
+            x, y, w, h = max(0, int(x)), max(0, int(y)), int(w), int(h)
+            if x + w > w_img:
+                w = w_img - x
+            if y + h > h_img:
+                h = h_img - y
+
+            helmet_x1, helmet_y1, helmet_x2, helmet_y2 = self.image_processor.get_helmet_roi(x, y, w, h, w_img, h_img)
+            helmet_roi = img_rgb[helmet_y1:helmet_y2, helmet_x1:helmet_x2]
+
+            has_helmet, score = self.helmet_analyzer.analyze_helmet(helmet_roi)
+
+            box_color = UIStyles.ACCENT_GREEN if has_helmet else UIStyles.ACCENT_RED
+            draw.rectangle([x, y, x + w, y + h], outline=box_color, width=2)
+            draw.rectangle([helmet_x1, helmet_y1, helmet_x2, helmet_y2], outline=UIStyles.ACCENT_YELLOW, width=1)
+
+            # Лаконичная метка
+            label = f"{'✓' if has_helmet else '✗'} {int(score * 100)}%"
+            # Отрисовка с заливкой
+            bbox = draw.textbbox((0, 0), label, font=font)
+            text_w, text_h = bbox[2] - bbox[0], bbox[3] - bbox[1]
+            tx, ty = x, max(0, helmet_y1 - text_h - 4)
+            draw.rectangle([tx, ty, tx + text_w + 6, ty + text_h + 2], fill=box_color)
+            draw.text((tx + 3, ty + 1), label, fill=(0, 0, 0), font=font)
+
+            norm_key = self.image_processor.get_stability_key(x, y, w, h)
+            new_presence[norm_key] = has_helmet
+
+            results.append({
+                "position": (x, y, w, h),
+                "has_helmet": bool(has_helmet),
+                "score": float(score)
+            })
+
+        for k, has in new_presence.items():
+            prev = self._face_presence_count.get(k, 0)
+            self._face_presence_count[k] = prev + 1 if has else max(0, prev - 1)
+
+        filtered_results = []
+        for r in results:
+            x, y, w, h = r["position"]
+            key = self.image_processor.get_stability_key(x, y, w, h)
+            stable_count = self._face_presence_count.get(key, 0)
+            if stable_count < self._stability_required_frames:
+                r["score"] = r["score"] * (stable_count / self._stability_required_frames)
+                if r["score"] < 0.15:
+                    r["has_helmet"] = False
+            filtered_results.append(r)
+        filtered_results = self._filter_results_by_confidence(filtered_results, min_confidence=0.3)
+        return annotated, filtered_results
 
     def _redraw_canvas_if_needed(self):
         if self.current_image is not None:
             self.display_image(self.current_image)
+
+    def _filter_results_by_confidence(self, results, min_confidence=0.3):
+        """Отсеивает результаты с низкой уверенностью"""
+        return [r for r in results if r['score'] >= min_confidence]
 
     # ------------------- Работа с изображениями -------------------
     def load_image(self):
@@ -289,52 +458,6 @@ class HelmetDetectionApp:
 
         except Exception as e:
             messagebox.showerror("Ошибка", f"Не удалось загрузить видео: {e}")
-
-    def _create_video_controls(self):
-        """Создает панель управления видео"""
-        # Проверяем, существует ли уже панель
-        if hasattr(self, 'video_controls_frame') and self.video_controls_frame:
-            try:
-                self.video_controls_frame.destroy()
-            except:
-                pass
-
-        # Создаем панель управления
-        self.video_controls_frame = tk.Frame(self.canvas_frame, bg=UIStyles.BG)
-        self.video_controls_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=(5, 0))
-
-        # Кнопки управления
-        btn_frame = tk.Frame(self.video_controls_frame, bg=UIStyles.BG)
-        btn_frame.pack(pady=5)
-
-        self.btn_video_play = tk.Button(btn_frame, text="⏸ Пауза", command=self.toggle_video_pause,
-                                        font=('Segoe UI', 9), relief='flat', cursor='hand2')
-        self.btn_video_stop = tk.Button(btn_frame, text="⏹ Стоп", command=self.stop_video,
-                                        font=('Segoe UI', 9), relief='flat', cursor='hand2')
-
-        UIStyles.apply_button_style(self.btn_video_play, UIStyles.PRIMARY, '#2980b9')
-        UIStyles.apply_button_style(self.btn_video_stop, UIStyles.DANGER, '#c0392b')
-
-        self.btn_video_play.pack(side=tk.LEFT, padx=5)
-        self.btn_video_stop.pack(side=tk.LEFT, padx=5)
-
-        # Прогресс-бар
-        progress_frame = tk.Frame(self.video_controls_frame, bg=UIStyles.BG)
-        progress_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
-
-        self.video_progress = ttk.Scale(progress_frame, from_=0, to=100, orient=tk.HORIZONTAL,
-                                        command=self.seek_video)
-        self.video_progress.pack(fill=tk.X)
-
-        self.video_time_label = tk.Label(progress_frame, text="00:00 / 00:00",
-                                         font=('Segoe UI', 8), bg=UIStyles.BG, fg=UIStyles.GRAY)
-        self.video_time_label.pack(pady=(5, 0))
-
-        # Статистика видео
-        self.video_stats_label = tk.Label(self.video_controls_frame,
-                                          text="", font=('Segoe UI', 8),
-                                          bg=UIStyles.BG, fg=UIStyles.SUCCESS)
-        self.video_stats_label.pack(pady=(0, 5))
 
     def start_video_playback(self):
         """Запускает воспроизведение видео с анализом"""
@@ -494,12 +617,13 @@ class HelmetDetectionApp:
         if self.video_processor.is_paused:
             self.video_processor.resume()
             if self.btn_video_play:
-                self.btn_video_play.config(text="⏸ Пауза", bg=UIStyles.PRIMARY)
+                self.btn_video_play.config(text="⏸")
+                # Убираем установку цвета, так как он и так правильный
             self.status_var.set("Воспроизведение возобновлено")
         else:
             self.video_processor.pause()
             if self.btn_video_play:
-                self.btn_video_play.config(text="▶ Воспроизвести", bg=UIStyles.SUCCESS)
+                self.btn_video_play.config(text="▶")
             self.status_var.set("Видео на паузе")
 
     def seek_video(self, value):
@@ -562,7 +686,7 @@ class HelmetDetectionApp:
         if not _CV2_AVAILABLE or self.camera_running:
             return
         try:
-            self.stop_video()  # Останавливаем видео если включено
+            self.stop_video()
             self.cap = cv2.VideoCapture(0, cv2.CAP_DSHOW) if os.name == 'nt' else cv2.VideoCapture(0)
             if not self.cap.isOpened():
                 self.cap = cv2.VideoCapture(0)
@@ -573,7 +697,7 @@ class HelmetDetectionApp:
             return
 
         self.camera_running = True
-        self.btn_camera.config(text="Выключить камеру", bg=UIStyles.DANGER, activebackground='#c0392b')
+        self.btn_camera.config(text="Камера (вкл)")
         self.status_var.set("Камера активна")
         self.camera_thread = threading.Thread(target=self._camera_loop, daemon=True)
         self.camera_thread.start()
@@ -598,8 +722,7 @@ class HelmetDetectionApp:
                 pass
         self.cap = None
         self.camera_running = False
-        self.root.after(0, lambda: self.btn_camera.config(text="Включить камеру", bg=UIStyles.SUCCESS,
-                                                          activebackground='#27ae60'))
+        self.root.after(0, lambda: self.btn_camera.config(text="Камера"))
         self.root.after(0, lambda: self.status_var.set("Камера отключена"))
 
     def stop_camera(self):
@@ -613,7 +736,7 @@ class HelmetDetectionApp:
                     pass
                 self.cap = None
             self.camera_running = False
-            self.btn_camera.config(text="Включить камеру", bg=UIStyles.SUCCESS, activebackground='#27ae60')
+            self.btn_camera.config(text="Камера")
             self.status_var.set("Камера отключена")
 
     # ------------------- Анализ изображения -------------------
@@ -639,121 +762,6 @@ class HelmetDetectionApp:
         self._display_results(results)
         self.status_var.set("Анализ завершен")
 
-    def _detect_helmets(self, pil_image):
-        img_rgb = np.array(pil_image.convert("RGB"))
-        h_img, w_img = img_rgb.shape[:2]
-
-        # Улучшение контраста
-        img_rgb = self.image_processor.enhance_contrast(img_rgb)
-
-        # Детекция лиц
-        faces = self.face_detector.detect_faces(img_rgb)
-
-        if not faces:
-            return pil_image, []
-
-        # Аннотация
-        annotated = pil_image.copy()
-        draw = ImageDraw.Draw(annotated)
-
-        try:
-            font = ImageFont.truetype(config.FONT_PATH, size=14)
-        except Exception:
-            font = ImageFont.load_default()
-
-        results = []
-        new_presence = {}
-
-        for idx, (x, y, w, h) in enumerate(faces):
-            x, y, w, h = max(0, int(x)), max(0, int(y)), int(w), int(h)
-            if x + w > w_img:
-                w = w_img - x
-            if y + h > h_img:
-                h = h_img - y
-
-            # ROI каски
-            helmet_x1, helmet_y1, helmet_x2, helmet_y2 = self.image_processor.get_helmet_roi(x, y, w, h, w_img, h_img)
-            helmet_roi = img_rgb[helmet_y1:helmet_y2, helmet_x1:helmet_x2]
-
-            # Анализ
-            has_helmet, score = self.helmet_analyzer.analyze_helmet(helmet_roi)
-
-            # Ключ для стабилизации
-            norm_key = self.image_processor.get_stability_key(x, y, w, h)
-            new_presence[norm_key] = has_helmet
-
-            # Отрисовка
-            box_color = (46, 204, 113) if has_helmet else (231, 76, 60)
-            draw.rectangle([x, y, x + w, y + h], outline=box_color, width=3)
-            draw.rectangle([helmet_x1, helmet_y1, helmet_x2, helmet_y2], outline=(241, 196, 15), width=2)
-
-            label = f"#{idx + 1} | {'В КАСКЕ' if has_helmet else 'БЕЗ КАСКИ'} | {int(score * 100)}%"
-            bbox = draw.textbbox((0, 0), label, font=font)
-            text_w, text_h = bbox[2] - bbox[0], bbox[3] - bbox[1]
-
-            tx, ty = x, max(0, helmet_y1 - text_h - 6)
-            draw.rectangle([tx, ty, tx + text_w + 8, ty + text_h + 4], fill=box_color)
-            draw.text((tx + 4, ty + 2), label, fill=(255, 255, 255), font=font)
-
-            results.append({
-                "position": (x, y, w, h),
-                "has_helmet": bool(has_helmet),
-                "score": float(score)
-            })
-
-        # Стабилизация
-        for k, has in new_presence.items():
-            prev = self._face_presence_count.get(k, 0)
-            self._face_presence_count[k] = prev + 1 if has else max(0, prev - 1)
-
-        filtered_results = []
-        for r in results:
-            x, y, w, h = r["position"]
-            key = self.image_processor.get_stability_key(x, y, w, h)
-            stable_count = self._face_presence_count.get(key, 0)
-            if stable_count < self._stability_required_frames:
-                r["score"] = r["score"] * (stable_count / self._stability_required_frames)
-                if r["score"] < 0.15:
-                    r["has_helmet"] = False
-            filtered_results.append(r)
-
-        return annotated, filtered_results
-
-    def _display_results(self, results):
-        self.results_text.delete(1.0, tk.END)
-
-        if not results:
-            self.results_text.insert(tk.END, "Области интереса не обнаружены.\nПопробуйте другое изображение.")
-            for key in self.stats_vars:
-                self.stats_vars[key].set("0")
-            return
-
-        total = len(results)
-        with_helmet = sum(1 for r in results if r["has_helmet"])
-        without = total - with_helmet
-        compliance = (with_helmet / total) * 100 if total else 0.0
-
-        # Обновление статистики
-        self.stats_vars['total'].set(str(total))
-        self.stats_vars['with_helmet'].set(str(with_helmet))
-        self.stats_vars['without'].set(str(without))
-        self.stats_vars['compliance'].set(f"{compliance:.1f}%")
-
-        # Детальный отчет
-        self.results_text.insert(tk.END, "ДЕТАЛЬНЫЙ ОТЧЕТ ПО КАЖДОМУ СОТРУДНИКУ\n")
-
-        for i, r in enumerate(results, 1):
-            status = "В КАСКЕ" if r['has_helmet'] else "БЕЗ КАСКИ"
-            self.results_text.insert(tk.END, f"Сотрудник #{i}:\n")
-            self.results_text.insert(tk.END, f"  Статус: {status}\n")
-            self.results_text.insert(tk.END, f"  Уверенность: {int(r['score'] * 100)}%\n")
-            self.results_text.insert(tk.END, f"  Позиция: x={r['position'][0]}, y={r['position'][1]}\n\n")
-
-        self.results_text.insert(tk.END, f"ИТОГО: {with_helmet} из {total} сотрудников в касках\n")
-        self.results_text.insert(tk.END, f"СОБЛЮДЕНИЕ: {compliance:.1f}%\n")
-
-        self.results_text.see(tk.END)
-
     def clear_all(self):
         self.stop_video()
         self.stop_camera()
@@ -761,21 +769,8 @@ class HelmetDetectionApp:
             self.current_image = None
         self.canvas.delete("all")
         self.canvas.create_text(400, 250, text="Загрузите изображение\nили включите камеру",
-                                font=('Segoe UI', 14), fill=UIStyles.GRAY, justify=tk.CENTER, tags=("hint",))
+                                font=('Segoe UI', 12), fill=UIStyles.TEXT_DISABLED, justify=tk.CENTER, tags=("hint",))
         self.results_text.delete(1.0, tk.END)
         for key in self.stats_vars:
             self.stats_vars[key].set("0")
-        self.status_var.set("Готов к работе")
-
-    def display_image(self, pil_img):
-        if pil_img is None:
-            return
-        cw = max(self.canvas.winfo_width(), 320)
-        ch = max(self.canvas.winfo_height(), 240)
-        iw, ih = pil_img.size
-        scale = min(cw / iw, ch / ih) * 0.95
-        nw, nh = max(1, int(iw * scale)), max(1, int(ih * scale))
-        img_resized = pil_img.resize((nw, nh), Image.Resampling.LANCZOS)
-        self.photoimage = ImageTk.PhotoImage(img_resized)
-        self.canvas.delete("all")
-        self.canvas.create_image(cw // 2, ch // 2, image=self.photoimage, anchor=tk.CENTER)
+        self.status_var.set("Готов")
