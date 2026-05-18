@@ -2,6 +2,7 @@
 import threading
 import queue
 import time
+import logging
 import numpy as np
 from PIL import Image
 
@@ -11,7 +12,10 @@ try:
     _CV2_AVAILABLE = True
 except ImportError:
     _CV2_AVAILABLE = False
-    print("Предупреждение: OpenCV (cv2) не установлен. Видеофункции будут недоступны.")
+
+logger = logging.getLogger(__name__)
+if not _CV2_AVAILABLE:
+    logger.warning("OpenCV (cv2) не установлен. Видеофункции будут недоступны.")
 
 
 class VideoProcessor:
