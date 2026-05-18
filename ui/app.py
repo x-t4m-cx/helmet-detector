@@ -1,6 +1,7 @@
 import os
 import time
 import threading
+import logging
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from PIL import Image, ImageTk, ImageDraw, ImageFont
@@ -8,7 +9,7 @@ import numpy as np
 
 import config
 from detection import FaceDetector, HelmetAnalyzer
-from utils import ImageProcessor
+from utils import ImageProcessor, FaceStatsRepository
 from ui.styles import UIStyles
 
 try:
@@ -22,6 +23,9 @@ try:
     _VIDEO_PROCESSOR_AVAILABLE = True
 except ImportError:
     _VIDEO_PROCESSOR_AVAILABLE = False
+
+
+logger = logging.getLogger(__name__)
 
 
 class HelmetDetectionApp:
@@ -54,12 +58,16 @@ class HelmetDetectionApp:
         self.video_progress = None
         self.video_time_label = None
         self.video_stats_label = None
+        self._camera_report_every_n_frames = 5
+        self._camera_frame_counter = 0
 
         # Стабилизация
         self._stability_required_frames = config.STABILITY_REQUIRED_FRAMES
         self._face_presence_count = {}
+        self.stats_repository = FaceStatsRepository()
 
         self.setup_ui()
+        self.root.protocol("WM_DELETE_WINDOW", self.on_close)
 
     def setup_ui(self):
         main_container = tk.Frame(self.root, bg=UIStyles.BG_PRIMARY)
@@ -105,13 +113,21 @@ class HelmetDetectionApp:
         self.btn_video = tk.Button(btn_frame, text="Загрузить видео", command=self.load_video)
         self.btn_camera = tk.Button(btn_frame, text="Камера", command=self.toggle_camera)
         self.btn_analyze = tk.Button(btn_frame, text="Анализ", command=self.analyze_current)
+        self.btn_history = tk.Button(btn_frame, text="История", command=self.show_history)
+        self.btn_export_history = tk.Button(btn_frame, text="Экспорт TXT", command=self.export_history_to_txt)
         self.btn_clear = tk.Button(btn_frame, text="Очистить", command=self.clear_all)
 
         # Применяем единый стиль (без разноцветных кнопок)
-        for btn in [self.btn_load, self.btn_video, self.btn_camera, self.btn_analyze, self.btn_clear]:
+        for btn in [
+            self.btn_load, self.btn_video, self.btn_camera, self.btn_analyze,
+            self.btn_history, self.btn_export_history, self.btn_clear
+        ]:
             UIStyles.apply_button_style(btn, is_primary=(btn == self.btn_analyze))
 
-        for btn in [self.btn_load, self.btn_video, self.btn_camera, self.btn_analyze, self.btn_clear]:
+        for btn in [
+            self.btn_load, self.btn_video, self.btn_camera, self.btn_analyze,
+            self.btn_history, self.btn_export_history, self.btn_clear
+        ]:
             btn.pack(side=tk.LEFT, padx=4)
 
     def _create_image_panel(self, parent):
@@ -217,16 +233,18 @@ class HelmetDetectionApp:
         status_label.pack(side=tk.LEFT)
 
     def _display_results(self, results):
-        self.results_text.delete(1.0, tk.END)
+        total, with_helmet, without, compliance = self._set_stats_from_results(results)
+        extra = [
+            f"Источник: Изображение",
+            f"Время анализа: {time.strftime('%H:%M:%S')}"
+        ]
+        self._render_full_report(results, total, with_helmet, without, compliance, extra_lines=extra)
+        self._save_stats_to_db("image", results, total, with_helmet, without, compliance)
 
-        if not results:
-            self.results_text.insert(tk.END, "Лица не обнаружены")
-            for key in self.stats_vars:
-                self.stats_vars[key].set("0")
-            return
-
+    def _set_stats_from_results(self, results):
+        """Обновляет правую панель статистики по текущим результатам."""
         total = len(results)
-        with_helmet = sum(1 for r in results if r["has_helmet"])
+        with_helmet = sum(1 for r in results if r.get("has_helmet", False))
         without = total - with_helmet
         compliance = (with_helmet / total) * 100 if total else 0.0
 
@@ -235,34 +253,81 @@ class HelmetDetectionApp:
         self.stats_vars['without'].set(str(without))
         self.stats_vars['compliance'].set(f"{compliance:.1f}%")
 
-        # Лаконичный отчет без лишних символов
-        self.results_text.insert(tk.END, f"Обнаружено: {total} лиц\n\n")
+        return total, with_helmet, without, compliance
+
+    def _update_camera_frame_ui(self, image, results):
+        """Безопасное обновление UI из потока камеры."""
+        self.current_image = image
+        self.display_image(image)
+        total, with_helmet, without, compliance = self._set_stats_from_results(results)
+        self._camera_frame_counter += 1
+        if self._camera_frame_counter % self._camera_report_every_n_frames == 0:
+            extra = [
+                f"Источник: Камера",
+                f"Время кадра: {time.strftime('%H:%M:%S')}",
+                f"Частота обновления отчета: каждый {self._camera_report_every_n_frames}-й кадр"
+            ]
+            self._render_full_report(results, total, with_helmet, without, compliance, extra_lines=extra)
+            self._save_stats_to_db("camera", results, total, with_helmet, without, compliance)
+
+    def _render_full_report(self, results, total, with_helmet, without, compliance, extra_lines=None):
+        """Формирует подробный отчет в правом текстовом блоке."""
+        self.results_text.delete(1.0, tk.END)
+        self.results_text.insert(tk.END, "ПОЛНЫЙ ОТЧЕТ\n")
+        self.results_text.insert(tk.END, "-" * 34 + "\n")
+
+        if extra_lines:
+            for line in extra_lines:
+                self.results_text.insert(tk.END, f"{line}\n")
+            self.results_text.insert(tk.END, "\n")
+
+        self.results_text.insert(tk.END, f"Всего лиц: {total}\n")
+        self.results_text.insert(tk.END, f"В касках: {with_helmet}\n")
+        self.results_text.insert(tk.END, f"Без касок: {without}\n")
+        self.results_text.insert(tk.END, f"Соблюдение: {compliance:.1f}%\n")
+        self.results_text.insert(tk.END, "\nДетали по лицам:\n")
+
+        if not results:
+            self.results_text.insert(tk.END, "Лица не обнаружены.\n")
+            self.results_text.see(tk.END)
+            return
 
         for i, r in enumerate(results, 1):
-            status = "В каске" if r['has_helmet'] else "Без каски"
-            confidence = f"{int(r['score'] * 100)}%"
-            self.results_text.insert(tk.END, f"{i}. {status}  [{confidence}]\n")
+            x, y, w, h = r.get("position", (0, 0, 0, 0))
+            status = "В каске" if r.get("has_helmet", False) else "Без каски"
+            confidence_pct = int(float(r.get("score", 0)) * 100)
+            self.results_text.insert(
+                tk.END,
+                f"{i}) {status} | Уверенность: {confidence_pct}% | bbox=({x},{y},{w},{h})\n"
+            )
 
-        self.results_text.insert(tk.END, f"\nСоблюдение: {compliance:.1f}%")
         self.results_text.see(tk.END)
 
     def _update_video_results(self, results, frame_num):
-        """Обновляет отображение результатов для видео (лаконично)"""
-        if not results:
-            return
+        """Обновляет подробный отчет по текущему видеокадру."""
+        total, with_helmet, without, compliance = self._set_stats_from_results(results)
+        extra = [
+            f"Источник: Видео",
+            f"Кадр: {frame_num}",
+            f"Время обновления: {time.strftime('%H:%M:%S')}"
+        ]
+        self._render_full_report(results, total, with_helmet, without, compliance, extra_lines=extra)
+        self._save_stats_to_db("video", results, total, with_helmet, without, compliance, frame_num=frame_num)
 
-        self.results_text.delete(1.0, tk.END)
-
-        with_helmet = sum(1 for r in results if r['has_helmet'])
-
-        self.results_text.insert(tk.END, f"Кадр {frame_num}\n")
-        self.results_text.insert(tk.END, f"В касках: {with_helmet} / {len(results)}\n\n")
-
-        for i, r in enumerate(results, 1):
-            status = "✓" if r['has_helmet'] else "✗"
-            self.results_text.insert(tk.END, f"{i}. {status}  [{int(r['score'] * 100)}%]\n")
-
-        self.results_text.see(tk.END)
+    def _save_stats_to_db(self, source, results, total, with_helmet, without, compliance, frame_num=None):
+        """Сохраняет статистику обработки в SQLite."""
+        try:
+            self.stats_repository.save_event(
+                source=source,
+                total_faces=total,
+                with_helmet=with_helmet,
+                without_helmet=without,
+                compliance=compliance,
+                results=results,
+                frame_num=frame_num
+            )
+        except Exception:
+            logger.exception("Не удалось сохранить статистику в БД")
 
     def _create_video_controls(self):
         """Создает панель управления видео (лаконичная)"""
@@ -382,7 +447,8 @@ class HelmetDetectionApp:
                 if r["score"] < 0.15:
                     r["has_helmet"] = False
             filtered_results.append(r)
-        filtered_results = self._filter_results_by_confidence(filtered_results, min_confidence=0.3)
+        # Важно: не отбрасываем найденные лица по "helmet score".
+        # Низкая уверенность должна влиять на статус каски, но не скрывать само лицо из отчета/UI.
         return annotated, filtered_results
 
     def _redraw_canvas_if_needed(self):
@@ -496,19 +562,12 @@ class HelmetDetectionApp:
         return formatted_results
 
     def _update_video_stats(self, total, with_helmet, without, frame_num):
-        """Обновляет статистику видео в UI"""
-        # Накопляем статистику
-        current_total = int(self.stats_vars['total'].get())
-        current_with = int(self.stats_vars['with_helmet'].get())
-
-        self.stats_vars['total'].set(str(current_total + total))
-        self.stats_vars['with_helmet'].set(str(current_with + with_helmet))
-        self.stats_vars['without'].set(str(current_total + total - current_with - with_helmet))
-
-        new_total = current_total + total
-        if new_total > 0:
-            compliance = ((current_with + with_helmet) / new_total) * 100
-            self.stats_vars['compliance'].set(f"{compliance:.1f}%")
+        """Обновляет статистику видео в UI по текущему кадру."""
+        compliance = (with_helmet / total) * 100 if total else 0.0
+        self.stats_vars['total'].set(str(total))
+        self.stats_vars['with_helmet'].set(str(with_helmet))
+        self.stats_vars['without'].set(str(without))
+        self.stats_vars['compliance'].set(f"{compliance:.1f}%")
 
     def _detect_helmets_on_image(self, image_rgb):
         """Анализирует изображение (numpy array) на наличие лиц и касок"""
@@ -581,6 +640,7 @@ class HelmetDetectionApp:
             # Обновляем изображение
             self.current_image = Image.fromarray(result['image'])
             self.display_image(self.current_image)
+            self._update_video_results(result.get('results', []), result.get('frame_num', 0))
 
             # Обновляем прогресс
             progress = self.video_processor.get_progress()
@@ -709,10 +769,10 @@ class HelmetDetectionApp:
                 time.sleep(0.05)
                 continue
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            img = Image.fromarray(rgb)
+            annotated, results = self._detect_helmets_on_image(rgb)
             with self.lock:
-                self.current_image = img
-            self.root.after(0, lambda im=img.copy(): self.display_image(im))
+                self.current_image = annotated
+            self.root.after(0, lambda im=annotated.copy(), rs=results.copy(): self._update_camera_frame_ui(im, rs))
             time.sleep(config.CAMERA_FRAME_DELAY)
 
         if self.cap:
@@ -771,6 +831,109 @@ class HelmetDetectionApp:
         self.canvas.create_text(400, 250, text="Загрузите изображение\nили включите камеру",
                                 font=('Segoe UI', 12), fill=UIStyles.TEXT_DISABLED, justify=tk.CENTER, tags=("hint",))
         self.results_text.delete(1.0, tk.END)
+        self._camera_frame_counter = 0
         for key in self.stats_vars:
             self.stats_vars[key].set("0")
         self.status_var.set("Готов")
+
+    def show_history(self):
+        """Показывает последние записи статистики из SQLite в окне отчета."""
+        try:
+            events = self.stats_repository.get_recent_events(limit=50)
+        except Exception:
+            logger.exception("Не удалось загрузить историю из БД")
+            messagebox.showerror("История", "Не удалось загрузить историю из базы данных")
+            return
+
+        self.results_text.delete(1.0, tk.END)
+        self.results_text.insert(tk.END, "ИСТОРИЯ ОБРАБОТКИ (SQLite)\n")
+        self.results_text.insert(tk.END, "-" * 40 + "\n")
+
+        if not events:
+            self.results_text.insert(tk.END, "Записей пока нет.\n")
+            self.status_var.set("История: записей нет")
+            return
+
+        for idx, event in enumerate(events, 1):
+            source = event.get("source", "unknown")
+            ts = event.get("created_at", "-")
+            frame_num = event.get("frame_num")
+            frame_part = f", кадр={frame_num}" if frame_num is not None else ""
+            self.results_text.insert(
+                tk.END,
+                (
+                    f"{idx}) {ts} | source={source}{frame_part}\n"
+                    f"   лица={event.get('total_faces', 0)}, "
+                    f"в касках={event.get('with_helmet', 0)}, "
+                    f"без касок={event.get('without_helmet', 0)}, "
+                    f"соблюдение={float(event.get('compliance', 0.0)):.1f}%\n\n"
+                ),
+            )
+
+        self.results_text.see(1.0)
+        self.status_var.set(f"История: показаны последние {len(events)} записей")
+
+    def export_history_to_txt(self):
+        """Экспортирует историю из SQLite в текстовый файл."""
+        try:
+            events = self.stats_repository.get_recent_events(limit=1000)
+        except Exception:
+            logger.exception("Не удалось загрузить историю для экспорта")
+            messagebox.showerror("Экспорт", "Не удалось загрузить историю из базы данных")
+            return
+
+        if not events:
+            messagebox.showinfo("Экспорт", "История пуста. Экспортировать нечего.")
+            return
+
+        default_name = f"history_export_{time.strftime('%Y%m%d_%H%M%S')}.txt"
+        file_path = filedialog.asksaveasfilename(
+            title="Сохранить историю в TXT",
+            defaultextension=".txt",
+            initialfile=default_name,
+            filetypes=[("Текстовый файл", "*.txt"), ("Все файлы", "*.*")]
+        )
+        if not file_path:
+            return
+
+        lines = []
+        lines.append("HISTORY EXPORT (SQLite)")
+        lines.append("=" * 50)
+        lines.append(f"Export time: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+        lines.append(f"Records: {len(events)}")
+        lines.append("")
+
+        for idx, event in enumerate(events, 1):
+            source = event.get("source", "unknown")
+            ts = event.get("created_at", "-")
+            frame_num = event.get("frame_num")
+            frame_part = f", frame={frame_num}" if frame_num is not None else ""
+            lines.append(f"{idx}) {ts} | source={source}{frame_part}")
+            lines.append(
+                f"   faces={event.get('total_faces', 0)}, "
+                f"with_helmet={event.get('with_helmet', 0)}, "
+                f"without_helmet={event.get('without_helmet', 0)}, "
+                f"compliance={float(event.get('compliance', 0.0)):.1f}%"
+            )
+            lines.append("")
+
+        try:
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write("\n".join(lines))
+        except Exception as e:
+            logger.exception("Ошибка записи TXT экспорта")
+            messagebox.showerror("Экспорт", f"Не удалось сохранить файл: {e}")
+            return
+
+        self.status_var.set(f"Экспортировано записей: {len(events)}")
+        messagebox.showinfo("Экспорт", f"История сохранена:\n{file_path}")
+
+    def on_close(self):
+        """Корректно завершает приложение и закрывает ресурсы."""
+        self.stop_video()
+        self.stop_camera()
+        try:
+            self.stats_repository.close()
+        except Exception:
+            logger.exception("Ошибка закрытия SQLite соединения")
+        self.root.destroy()

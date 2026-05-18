@@ -1,5 +1,6 @@
 # detection/helmet_analyzer.py
 import numpy as np
+import logging
 import config
 
 try:
@@ -8,6 +9,8 @@ try:
     _CV2_AVAILABLE = True
 except ImportError:
     _CV2_AVAILABLE = False
+
+logger = logging.getLogger(__name__)
 
 
 class HelmetAnalyzer:
@@ -36,22 +39,25 @@ class HelmetAnalyzer:
             upper = np.array(config.HSV_YELLOW_UPPER)
             mask = cv2.inRange(hsv, lower, upper)
 
-            # Простая очистка от шума (только эрозия, без дилатации)
+            # Улучшенная очистка маски: убираем шум и закрываем мелкие пробелы.
             kernel = np.ones((2, 2), np.uint8)
-            mask = cv2.erode(mask, kernel, iterations=1)
+            mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=1)
+            mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=1)
 
             ratio = mask.mean() / 255.0
-            has_helmet = ratio > config.HELMET_COLOR_RATIO_THRESHOLD
-            score = min(1.0, ratio * config.HELMET_SCORE_MULTIPLIER)
+            has_helmet, score, helmet_score = self._build_decision(ratio)
 
             # Логирование для отладки (можно убрать потом)
-            if has_helmet and score > 0.3:
-                print(f"Каска: ratio={ratio:.2f}, score={score:.2f}")
+            if score > 0.3:
+                logger.debug(
+                    "Результат каски: has_helmet=%s ratio=%.3f helmet_score=%.3f confidence=%.3f",
+                    has_helmet, ratio, helmet_score, score
+                )
 
             return bool(has_helmet), float(score)
 
-        except Exception as e:
-            print(f"Ошибка анализа HSV: {e}")
+        except Exception:
+            logger.exception("Ошибка анализа HSV")
             return False, 0.0
 
     def _analyze_without_cv2(self, roi_rgb):
@@ -60,6 +66,16 @@ class HelmetAnalyzer:
         v = np.max(arr, axis=2)
         mask_bright = (v > 0.85)
         ratio = mask_bright.mean()
-        has_helmet = ratio > config.HELMET_COLOR_RATIO_THRESHOLD
-        score = min(1.0, ratio * config.HELMET_SCORE_MULTIPLIER)
+        has_helmet, score, _ = self._build_decision(ratio)
         return bool(has_helmet), float(score)
+
+    def _build_decision(self, ratio):
+        """
+        Формирует решение по каске и confidence.
+        helmet_score: вероятность "есть каска" (0..1)
+        score: уверенность в итоговой классификации (0..1), в т.ч. для "без каски".
+        """
+        helmet_score = min(1.0, ratio * config.HELMET_SCORE_MULTIPLIER)
+        has_helmet = helmet_score >= config.HELMET_COLOR_RATIO_THRESHOLD
+        score = helmet_score if has_helmet else (1.0 - helmet_score)
+        return bool(has_helmet), float(score), float(helmet_score)
